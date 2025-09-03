@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OECD 497 — 2-out-of-3 Batch Helper (Raw Metrics)</title>
+  <meta name="description" content="Batch processor for OECD TG 497 2-out-of-3 hazard decisions (DPRA, KeratinoSens, h-CLAT). Supports either per-assay calls or raw metrics." />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --muted: #8aa1c1;
+      --text: #eef3ff;
+      --accent: #8bd3ff;
+      --accent2: #8fffbd;
+      --danger: #ff8b8b;
+      --warn: #ffd08b;
+    }
+    html, body { background: var(--bg); color: var(--text); margin: 0; padding: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; line-height: 1.35; }
+    .container { max-width: 1180px; margin: 24px auto 96px; padding: 0 16px;}
+    h1 { font-size: 26px; margin: 0 0 6px 0; }
+    h3 { font-size: 16px; margin-top: 20px; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+    .panel { background: var(--panel); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 16px; box-shadow: 0 6px 16px rgba(0,0,0,0.25); margin-bottom: 16px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .col { flex: 1; min-width: 240px; }
+    .col-sm { flex: 1; min-width: 180px; }
+    input[type="file"] { display: none; }
+    .drop { display: flex; align-items: center; justify-content: center; gap: 10px; flex-direction: column; border: 2px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 20px; cursor: pointer; text-align:center; color: var(--muted); min-height: 110px; }
+    .btn { background: linear-gradient(90deg, var(--accent), #cba6ff); border: none; color: #0a0f19; font-weight: 700; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+    .btn.secondary { background: #1e2a44; color: var(--text); font-weight: 600; }
+    .btn.ghost { background: transparent; color: var(--accent); border: 1px solid rgba(255,255,255,0.15); }
+    label, select, input[type="checkbox"], input[type="number"], input[type="text"] { font-size: 14px; }
+    select, input[type="number"], input[type="text"] { background: #0e1627; color: var(--text); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 8px; width: 100%; }
+    .mapgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .mapgrid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    @media (max-width: 960px) { .mapgrid, .mapgrid-4 { grid-template-columns: 1fr; } }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid rgba(255,255,255,0.08); padding: 8px 6px; font-size: 13px; vertical-align: top; }
+    th { text-align: left; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .pos { background: rgba(143,255,189,0.18); color: var(--accent2); border: 1px solid rgba(143,255,189,0.35);}
+    .neg { background: rgba(255,139,139,0.18); color: var(--danger); border: 1px solid rgba(255,139,139,0.35);}
+    .inc { background: rgba(255,208,139,0.18); color: var(--warn); border: 1px solid rgba(255,208,139,0.35);}
+    .confH { color: var(--accent2); }
+    .confL { color: var(--warn); }
+    details { border: 1px dashed rgba(255,255,255,0.12); border-radius: 10px; padding: 10px 12px; }
+    summary { cursor: pointer; color: var(--accent); font-weight: 700; }
+    .footer { color: var(--muted); margin-top: 28px; font-size: 12px; text-align: center; }
+    .signature { white-space: pre; text-align: center; color: var(--muted); margin-top: 16px; }
+    .pill-mini { font-size: 11px; border-radius: 8px; padding: 1px 6px; border: 1px solid rgba(255,255,255,.15); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>OECD 497 — 2-out-of-3 <span style="opacity:.85;">Batch Helper</span></h1>
+    <div class="sub">Upload a CSV/XLSX, map columns, and generate batched 2o3 hazard decisions. Choose whether you’re supplying <b>per-assay calls</b> or <b>raw metrics</b>. Everything runs locally in your browser.</div>
+
+    <div class="panel">
+      <div class="row">
+        <div class="col">
+          <label><b>1) Upload data</b></label>
+          <label class="drop" for="file">
+            <div>Drop file here or <span class="btn ghost">Choose a file</span></div>
+            <small>Accepted: .xlsx, .xls, .csv</small>
+          </label>
+          <input id="file" type="file" accept=".xlsx,.xls,.csv" />
+        </div>
+        <div class="col">
+          <label><b>Input type</b></label>
+          <div class="panel" style="padding:10px;">
+            <label><input type="radio" name="mode" value="calls" checked /> Per-assay calls (e.g., 1/0, Bp/Bn)</label><br/>
+            <label><input type="radio" name="mode" value="raw" /> Raw metrics (DPRA %, KS fold + viability, h-CLAT RFIs)</label>
+          </div>
+          <label><b>2o3 options</b></label>
+          <div class="panel" style="padding:10px;">
+            <div><label><input id="optHighOnly" type="checkbox" checked /> Count only <b>High-confidence</b> calls in 2o3</label></div>
+            <div><label><input id="optIncludeKDpra" type="checkbox" /> Count “1 (kDPRA)” as DPRA <b>positive</b> (still Low confidence)</label></div>
+            <div><label><input id="optCountBorderline" type="checkbox" /> Also count <b>Low-confidence</b> calls in 2o3</label></div>
+          </div>
+        </div>
+        <div class="col">
+          <label><b>Templates</b></label>
+          <div class="row">
+            <button class="btn secondary" onclick="downloadTemplate('calls')">Template: Calls</button>
+            <button class="btn secondary" onclick="downloadTemplate('raw')">Template: Raw metrics</button>
+          </div>
+          <div style="height:8px;"></div>
+          <a class="btn ghost" href="https://maurwhal.github.io/OECD497-2o3/" target="_blank" rel="noopener">Open the single-record 2o3 helper</a>
+        </div>
+      </div>
+    </div>
+
+    <div id="mappingPanel" class="panel" style="display:none;">
+      <h3>2) Map columns</h3>
+      <div class="mapgrid">
+        <div class="col">
+          <label>CAS column</label>
+          <select id="colCAS"></select>
+        </div>
+        <div class="col">
+          <label>Name / Material</label>
+          <select id="colName"></select>
+        </div>
+      </div>
+
+      <div id="mapCalls" class="panel" style="margin-top:12px;">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">Per-assay calls</h3>
+          <span class="pill-mini">expects 1, 0, Bp, Bn, "BL not ass.", "1 (kDPRA)"</span>
+        </div>
+        <div class="mapgrid">
+          <div class="col"><label>DPRA <i>(Call with BL)</i></label><select id="colDPRA"></select></div>
+          <div class="col"><label>KeratinoSens <i>(Call with BL)</i></label><select id="colKS"></select></div>
+          <div class="col"><label>h-CLAT <i>(Call with BL)</i></label><select id="colHCLAT"></select></div>
+        </div>
+      </div>
+
+      <div id="mapRaw" class="panel" style="margin-top:12px; display:none;">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">Raw metrics</h3>
+          <span class="pill-mini">we compute per-assay calls from numeric inputs</span>
+        </div>
+        <h3>DPRA (TG 442C)</h3>
+        <div class="mapgrid-4">
+          <div class="col-sm"><label>% Cys-depletion</label><select id="colDPRA_Cys"></select></div>
+          <div class="col-sm"><label>% Lys-depletion</label><select id="colDPRA_Lys"></select></div>
+          <div class="col-sm"><label>% AVG-depletion (if present)</label><select id="colDPRA_Avg"></select></div>
+          <div class="col-sm"><label>Positive cutoff (%)</label><input id="thrDPRA" type="number" step="0.01" value="6.38" /></div>
+        </div>
+
+        <h3>KeratinoSens (TG 442D)</h3>
+        <div class="mapgrid-4">
+          <div class="col-sm"><label>Max luciferase induction (fold)</label><select id="colKS_Fold"></select></div>
+          <div class="col-sm"><label>Viability at that concentration (%)</label><select id="colKS_Viab"></select></div>
+          <div class="col-sm"><label>Fold cutoff</label><input id="thrKS_Fold" type="number" step="0.01" value="1.5" /></div>
+          <div class="col-sm"><label>Min viability (%)</label><input id="thrKS_Viab" type="number" step="1" value="70" /></div>
+        </div>
+
+        <h3>h-CLAT (TG 442E)</h3>
+        <div class="mapgrid-4">
+          <div class="col-sm"><label>RFI CD86 (%)</label><select id="colH_RFI86"></select></div>
+          <div class="col-sm"><label>RFI CD54 (%)</label><select id="colH_RFI54"></select></div>
+          <div class="col-sm"><label>Cell viability at that conc. (%) <i>(optional)</i></label><select id="colH_Viab"></select></div>
+          <div class="col-sm"><label>Min viability (%)</label><input id="thrH_Viab" type="number" step="1" value="50" /></div>
+        </div>
+        <div class="mapgrid-4">
+          <div class="col-sm"><label>CD86 cutoff (%)</label><input id="thrH_RFI86" type="number" step="1" value="150" /></div>
+          <div class="col-sm"><label>CD54 cutoff (%)</label><input id="thrH_RFI54" type="number" step="1" value="200" /></div>
+        </div>
+      </div>
+
+      <details class="panel" style="margin-top:12px;">
+        <summary>Borderline bands (optional)</summary>
+        <div class="sub">If a value falls in a borderline band, the call is still Pos/Neg but marked <span class="confL">Low</span> confidence.</div>
+        <div class="mapgrid-4">
+          <div class="col-sm"><label>DPRA borderline min (%)</label><input id="blDPRA_Min" type="number" step="0.01" value="3.0" /></div>
+          <div class="col-sm"><label>DPRA borderline max (%)</label><input id="blDPRA_Max" type="number" step="0.01" value="6.38" /></div>
+          <div class="col-sm"><label>KS fold borderline min</label><input id="blKS_Min" type="number" step="0.01" value="1.50" /></div>
+          <div class="col-sm"><label>KS fold borderline max</label><input id="blKS_Max" type="number" step="0.01" value="1.60" /></div>
+        </div>
+        <div class="mapgrid-4">
+          <div class="col-sm"><label>h-CLAT CD86 BL min (%)</label><input id="blH86_Min" type="number" step="1" value="140" /></div>
+          <div class="col-sm"><label>h-CLAT CD86 BL max (%)</label><input id="blH86_Max" type="number" step="1" value="160" /></div>
+          <div class="col-sm"><label>h-CLAT CD54 BL min (%)</label><input id="blH54_Min" type="number" step="1" value="190" /></div>
+          <div class="col-sm"><label>h-CLAT CD54 BL max (%)</label><input id="blH54_Max" type="number" step="1" value="210" /></div>
+        </div>
+        <div class="mapgrid-4">
+          <div class="col-sm"><label>KS viability BL min (%)</label><input id="blKSv_Min" type="number" step="1" value="65" /></div>
+          <div class="col-sm"><label>KS viability BL max (%)</label><input id="blKSv_Max" type="number" step="1" value="70" /></div>
+          <div class="col-sm"><label>h-CLAT viability BL min (%)</label><input id="blHv_Min" type="number" step="1" value="45" /></div>
+          <div class="col-sm"><label>h-CLAT viability BL max (%)</label><input id="blHv_Max" type="number" step="1" value="50" /></div>
+        </div>
+      </details>
+
+      <div style="margin-top:12px;">
+        <button class="btn" onclick="runBatch()">3) Run 2o3 on all rows</button>
+      </div>
+      <div class="sub" id="sheetInfo"></div>
+    </div>
+
+    <div id="resultsPanel" class="panel" style="display:none;">
+      <div class="row" style="justify-content: space-between; align-items: center;">
+        <h3 style="margin:0;">Results</h3>
+        <div class="row">
+          <button class="btn secondary" onclick="downloadCSV()">Download CSV</button>
+        </div>
+      </div>
+      <div style="overflow:auto; max-height: 60vh; margin-top:8px;">
+        <table id="resultsTable"></table>
+      </div>
+    </div>
+
+    <details class="panel">
+      <summary>How this works</summary>
+      <div class="sub" style="margin-top:10px;">
+        <ul>
+          <li><b>Modes:</b> use either pre-made per-assay calls or raw metrics.</li>
+          <li><b>DPRA:</b> mean % depletion (Avg preferred; else mean of Cys+Lys). Default positive cutoff 6.38%. Optional borderline band.</li>
+          <li><b>KeratinoSens:</b> positive if max induction ≥ 1.5-fold at viability ≥ 70% (using the columns you map). Optional borderline bands around those thresholds.</li>
+          <li><b>h-CLAT:</b> positive if (CD86 ≥ 150% or CD54 ≥ 200%) with viability ≥ 50% (viability optional; if missing, confidence is set to Low). Optional borderline bands around cutoffs.</li>
+          <li><b>2o3 hazard:</b> If ≥2 Pos → <span class="pill pos">Positive</span>; if ≥2 Neg → <span class="pill neg">Negative</span>; else <span class="pill inc">Inconclusive</span>. You choose if Low-confidence calls count.</li>
+          <li><b>Everything runs locally.</b> No uploads or storage.</li>
+        </ul>
+      </div>
+    </details>
+
+    <div class="footer">
+      v1.1 • 2025-09-03 • Static client-side app for RIFM workflows
+      <div class="signature">
+This has been a Maura Lavelle production
+(\_/)   (\_/)   (\_/)   (\_/)
+('.'.)  ('.'.)  ('.'.)  ('.'.)
+(")(")  (")(")  (")(")  (")(")
+      </div>
+    </div>
+  </div>
+
+<script>
+let originalRows = [];
+let headerRow = [];
+let detectedHeaderIndex = 0;
+let fileNameBase = "results";
+
+document.getElementById("file").addEventListener("change", handleFile, false);
+document.querySelector(".drop").addEventListener("dragover", e => { e.preventDefault(); }, false);
+document.querySelector(".drop").addEventListener("drop", e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) { document.getElementById("file").files = e.dataTransfer.files; handleFile(); }
+}, false);
+
+document.querySelectorAll('input[name="mode"]').forEach(el => {
+  el.addEventListener('change', () => {
+    const mode = getMode();
+    document.getElementById("mapCalls").style.display = mode==='calls' ? 'block' : 'none';
+    document.getElementById("mapRaw").style.display = mode==='raw' ? 'block' : 'none';
+  });
+});
+
+function getMode() {
+  return document.querySelector('input[name="mode"]:checked').value;
+}
+
+function downloadTemplate(which) {
+  let csv;
+  if (which === 'raw') {
+    csv = [
+      "CAS Number,Name,DPRA % Cys-depletion,DPRA % Lys-depletion,DPRA % AVG-depletion,KeratinoSens Max fold,KS Viability at max (%),hCLAT RFI CD86 (%),hCLAT RFI CD54 (%),hCLAT viability at conc. (%)",
+      "100-51-6,Benzyl alcohol,0,0,0,1.2,95,120,140,90",
+      "112-07-2,2-Butoxyethyl acetate,0.3,0.3,0.3,1.3,92,120,150,80",
+      "923-26-2,2-Hydroxypropyl methacrylate,58.3,0,29.2,2.4,85,90,250,84",
+      "3395-91-3,Methyl 3-bromopropionate,99.8,84.4,92.1,1.7,78,160,180,72",
+      "94-09-7,Ethyl 4-amino-benzoate,29.2,0,14.6,1.6,71,120,210,70"
+    ].join("\n");
+  } else {
+    csv = [
+      "CAS Number,Name,DPRA Call with BL,KS Call with BL,hCLAT Call with BL",
+      "100-51-6,Benzyl alcohol,0,0,1",
+      "112-07-2,2-Butoxyethyl acetate,0,0,0",
+      "923-26-2,2-Hydroxypropyl methacrylate,1,1,0",
+      '3395-91-3,"Methyl 3-bromopropionate",1,Bp,0',
+      '94-09-7,"Ethyl 4-amino-benzoate",1,1,1 (kDPRA)'
+    ].join("\n");
+  }
+  const blob = new Blob([csv], {type: "text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = which==='raw' ? "2o3_raw_template.csv" : "2o3_batch_template.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function handleFile() {
+  const f = document.getElementById("file").files[0];
+  if (!f) return;
+  fileNameBase = f.name.replace(/\.[^.]+$/, "");
+  const reader = new FileReader();
+  if (f.name.match(/\.csv$/i)) {
+    reader.onload = e => parseCSV(e.target.result);
+    reader.readAsText(f);
+  } else {
+    reader.onload = e => parseXLSX(e.target.result);
+    reader.readAsArrayBuffer(f);
+  }
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).map(r => r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x => x.replace(/^\s*"?|"?\s*$/g, "")));
+  headerRow = lines[0];
+  originalRows = lines.slice(1).filter(r => r.some(c => String(c).trim() !== ""));
+  detectedHeaderIndex = 0;
+  buildMappingUI();
+}
+
+function parseXLSX(buf) {
+  const workbook = XLSX.read(buf, {type:'array'});
+  const firstSheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true });
+  headerRow = rows[0].map(c => String(c||""));
+  originalRows = rows.slice(1).filter(r => (r||[]).some(c => String(c||"").trim() !== ""));
+  detectedHeaderIndex = 0;
+  buildMappingUI(rows, firstSheetName);
+}
+
+function buildMappingUI(rows=null, sheetName="") {
+  const mappingPanel = document.getElementById("mappingPanel");
+  mappingPanel.style.display = "block";
+  document.getElementById("resultsPanel").style.display = "none";
+
+  // Build column selects
+  const cols = headerRow.map((c,i) => [i, c || ("Col"+(i+1))]);
+  const setOptions = (selId, guessRxList) => {
+    const sel = document.getElementById(selId);
+    sel.innerHTML = "";
+    // blank first option
+    const blank = document.createElement("option");
+    blank.value = ""; blank.textContent = "(none)";
+    sel.appendChild(blank);
+    for (const [i, name] of cols) {
+      const opt = document.createElement("option");
+      opt.value = i; opt.textContent = name;
+      sel.appendChild(opt);
+    }
+    // Guess default
+    for (const rx of guessRxList) {
+      const idx = headerRow.findIndex(h => rx.test(String(h||"")));
+      if (idx >= 0) { sel.value = idx; break; }
+    }
+  };
+
+  setOptions("colCAS", [/^\s*cas/i, /cas number/i]);
+  setOptions("colName", [/name/i, /material/i, /substance/i]);
+
+  // Calls
+  setOptions("colDPRA", [/dpra call with bl/i, /dpra call/i]);
+  setOptions("colKS", [/^ks call with bl$/i, /keratino.*call/i, /^ks call$/i]);
+  setOptions("colHCLAT", [/h\s*clat call with bl/i, /h-?clat.*call/i]);
+
+  // Raw
+  setOptions("colDPRA_Cys", [/cys.*depl/i, /cysteine/i]);
+  setOptions("colDPRA_Lys", [/lys.*depl/i, /lysine/i]);
+  setOptions("colDPRA_Avg", [/avg.*depl|average.*depl/i]);
+  setOptions("colKS_Fold", [/max.*fold|luciferase/i]);
+  setOptions("colKS_Viab", [/viab.*max|viability/i]);
+  setOptions("colH_RFI86", [/cd86/i]);
+  setOptions("colH_RFI54", [/cd54/i]);
+  setOptions("colH_Viab", [/viab/i]);
+
+  const sheetInfo = document.getElementById("sheetInfo");
+  sheetInfo.textContent = rows ? `Parsed sheet “${firstSheetNameSafe(sheetName)}”. Columns: ${headerRow.length}. Rows: ${originalRows.length}.` : "";
+}
+
+function firstSheetNameSafe(name) { try { return String(name); } catch(e) { return ""; } }
+
+function normalizeCallCode(val, { includeKDpra=false }={}) {
+  if (val === undefined || val === null) return { label: "NA", conf: "Low" };
+  let s = String(val).trim();
+  if (s === "") return { label: "NA", conf: "Low" };
+  if (s === "1") return { label: "Positive", conf: "High" };
+  if (s === "0") return { label: "Negative", conf: "High" };
+  if (/^1\s*\(kdpra\)/i.test(s)) return { label: includeKDpra ? "Positive" : "Positive", conf: "Low" };
+  if (/^bp$/i.test(s)) return { label: "Positive", conf: "Low" };
+  if (/^bn$/i.test(s)) return { label: "Negative", conf: "Low" };
+  if (/(bl\s*not\s*ass)/i.test(s)) { return /^1/.test(s) ? { label: "Positive", conf: "Low" } : { label: "Negative", conf: "Low" }; }
+  if (/^pos/i.test(s)) return { label: "Positive", conf: "High" };
+  if (/^neg/i.test(s)) return { label: "Negative", conf: "High" };
+  const num = Number(s);
+  if (!Number.isNaN(num)) {
+    if (num === 1) return { label: "Positive", conf: "High" };
+    if (num === 0) return { label: "Negative", conf: "High" };
+  }
+  return { label: s, conf: "Low" };
+}
+
+function parseNum(v) {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim().replace(/,/g,"");
+  if (s==="") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function dpraFromRaw(cys, lys, avg, thr, blMin, blMax) {
+  const vals = [];
+  if (avg !== null) vals.push(avg);
+  if (cys !== null && lys !== null) vals.push((cys + lys)/2);
+  if (cys !== null && lys === null) vals.push(cys);
+  if (lys !== null && cys === null) vals.push(lys);
+  if (!vals.length) return { label:"NA", conf:"Low", metric:null };
+  const m = vals[0];
+  let label = (m >= thr) ? "Positive" : "Negative";
+  let conf = "High";
+  if (blMin !== null && blMax !== null && m >= blMin && m <= blMax) conf = "Low";
+  return { label, conf, metric:m };
+}
+
+function ksFromRaw(fold, viab, thrFold, thrViab, blFoldMin, blFoldMax, blViMin, blViMax) {
+  if (fold === null || viab === null) {
+    // Can't fully assess; if fold present we can say Pos/Neg without viability but Low conf
+    if (fold === null) return { label:"NA", conf:"Low", metric:{fold:null,viab:null} };
+    const label = (fold >= thrFold) ? "Positive" : "Negative";
+    return { label, conf:"Low", metric:{fold,viab} };
+  }
+  const meets = (fold >= thrFold) && (viab >= thrViab);
+  const label = meets ? "Positive" : "Negative";
+  let conf = "High";
+  if ((blFoldMin !== null && blFoldMax !== null && fold >= blFoldMin && fold <= blFoldMax) ||
+      (blViMin !== null && blViMax !== null && viab >= blViMin && viab <= blViMax)) conf = "Low";
+  return { label, conf, metric:{fold,viab} };
+}
+
+function hclatFromRaw(rfi86, rfi54, viab, thr86, thr54, thrViab, bl86Min, bl86Max, bl54Min, bl54Max, blViMin, blViMax) {
+  const hasAny = (rfi86 !== null) || (rfi54 !== null);
+  if (!hasAny) return { label:"NA", conf:"Low", metric:{rfi86:null,rfi54:null,viab:viab} };
+  const rfiHit = (rfi86 !== null && rfi86 >= thr86) || (rfi54 !== null && rfi54 >= thr54);
+  const viabOk = (viab === null) ? false : (viab >= thrViab);
+  let conf = (viab === null) ? "Low" : "High";
+  const label = (rfiHit && (viab === null ? true : viabOk)) ? "Positive" : "Negative";
+  if ((bl86Min !== null && bl86Max !== null && rfi86 !== null && rfi86 >= bl86Min && rfi86 <= bl86Max) ||
+      (bl54Min !== null && bl54Max !== null && rfi54 !== null && rfi54 >= bl54Min && rfi54 <= bl54Max) ||
+      (viab !== null && blViMin !== null && blViMax !== null && viab >= blViMin && viab <= blViMax)) conf = "Low";
+  return { label, conf, metric:{rfi86, rfi54, viab} };
+}
+
+function runBatch() {
+  const mode = getMode();
+  const optHighOnly = document.getElementById("optHighOnly").checked;
+  const optKDpra = document.getElementById("optIncludeKDpra").checked;
+  const optCountBL = document.getElementById("optCountBorderline").checked;
+
+  const idxCAS = Number(document.getElementById("colCAS").value);
+  const idxName = Number(document.getElementById("colName").value);
+
+  const recs = originalRows.map(r => ({
+    CAS: String((r[idxCAS] ?? "")).trim(),
+    Name: String((r[idxName] ?? "")).trim(),
+    row: r
+  })).filter(x => x.CAS || x.Name);
+
+  const out = recs.map(entry => {
+    let dpra, ks, h;
+    if (mode === 'calls') {
+      const idxDPRA = Number(document.getElementById("colDPRA").value);
+      const idxKS = Number(document.getElementById("colKS").value);
+      const idxH = Number(document.getElementById("colHCLAT").value);
+      dpra = normalizeCallCode(entry.row[idxDPRA], { includeKDpra: optKDpra });
+      ks   = normalizeCallCode(entry.row[idxKS],   { includeKDpra: false });
+      h    = normalizeCallCode(entry.row[idxH],    { includeKDpra: false });
+    } else {
+      // thresholds & bands
+      const thrDPRA = parseNum(document.getElementById("thrDPRA").value);
+      const thrKS_Fold = parseNum(document.getElementById("thrKS_Fold").value);
+      const thrKS_Viab = parseNum(document.getElementById("thrKS_Viab").value);
+      const thrH_RFI86 = parseNum(document.getElementById("thrH_RFI86").value);
+      const thrH_RFI54 = parseNum(document.getElementById("thrH_RFI54").value);
+      const thrH_Viab  = parseNum(document.getElementById("thrH_Viab").value);
+
+      const blDPRA_Min = parseNum(document.getElementById("blDPRA_Min").value);
+      const blDPRA_Max = parseNum(document.getElementById("blDPRA_Max").value);
+      const blKS_Min = parseNum(document.getElementById("blKS_Min").value);
+      const blKS_Max = parseNum(document.getElementById("blKS_Max").value);
+      const blH86_Min = parseNum(document.getElementById("blH86_Min").value);
+      const blH86_Max = parseNum(document.getElementById("blH86_Max").value);
+      const blH54_Min = parseNum(document.getElementById("blH54_Min").value);
+      const blH54_Max = parseNum(document.getElementById("blH54_Max").value);
+      const blKSv_Min = parseNum(document.getElementById("blKSv_Min").value);
+      const blKSv_Max = parseNum(document.getElementById("blKSv_Max").value);
+      const blHv_Min  = parseNum(document.getElementById("blHv_Min").value);
+      const blHv_Max  = parseNum(document.getElementById("blHv_Max").value);
+
+      const iCys = Number(document.getElementById("colDPRA_Cys").value);
+      const iLys = Number(document.getElementById("colDPRA_Lys").value);
+      const iAvg = Number(document.getElementById("colDPRA_Avg").value);
+      const cys = isNaN(iCys) ? null : parseNum(entry.row[iCys]);
+      const lys = isNaN(iLys) ? null : parseNum(entry.row[iLys]);
+      const avg = isNaN(iAvg) ? null : parseNum(entry.row[iAvg]);
+
+      const iFold = Number(document.getElementById("colKS_Fold").value);
+      const iViab = Number(document.getElementById("colKS_Viab").value);
+      const fold = isNaN(iFold) ? null : parseNum(entry.row[iFold]);
+      const viabKS = isNaN(iViab) ? null : parseNum(entry.row[iViab]);
+
+      const i86 = Number(document.getElementById("colH_RFI86").value);
+      const i54 = Number(document.getElementById("colH_RFI54").value);
+      const iHv = Number(document.getElementById("colH_Viab").value);
+      const rfi86 = isNaN(i86) ? null : parseNum(entry.row[i86]);
+      const rfi54 = isNaN(i54) ? null : parseNum(entry.row[i54]);
+      const viabH = isNaN(iHv) ? null : parseNum(entry.row[iHv]);
+
+      const D = dpraFromRaw(cys, lys, avg, thrDPRA, blDPRA_Min, blDPRA_Max);
+      const K = ksFromRaw(fold, viabKS, thrKS_Fold, thrKS_Viab, blKS_Min, blKS_Max, blKSv_Min, blKSv_Max);
+      const H = hclatFromRaw(rfi86, rfi54, viabH, thrH_RFI86, thrH_RFI54, thrH_Viab, blH86_Min, blH86_Max, blH54_Min, blH54_Max, blHv_Min, blHv_Max);
+      dpra = {label:D.label, conf:D.conf, metric:D.metric};
+      ks   = {label:K.label, conf:K.conf, metric:K.metric};
+      h    = {label:H.label, conf:H.conf, metric:H.metric};
+    }
+
+    const calls = [
+      { lab: dpra.label, conf: dpra.conf },
+      { lab: ks.label, conf: ks.conf },
+      { lab: h.label, conf: h.conf }
+    ];
+
+    let pos=0, neg=0;
+    for (const c of calls) {
+      const countable = c.conf === "High" || (optCountBL && c.conf === "Low");
+      if (!countable) continue;
+      if (c.lab === "Positive") pos++;
+      else if (c.lab === "Negative") neg++;
+    }
+
+    let final = "Inconclusive", css = "inc";
+    if (pos >= 2) { final = "Positive"; css = "pos"; }
+    else if (neg >= 2) { final = "Negative"; css = "neg"; }
+
+    const rationale = `DPRA=${dpra.label}(${dpra.conf[0]}), KS=${ks.label}(${ks.conf[0]}), hCLAT=${h.label}(${h.conf[0]})`;
+
+    const res = {
+      CAS: entry.CAS, Name: entry.Name,
+      DPRA_in: (mode==='calls') ? (entry.row[Number(document.getElementById("colDPRA").value)]) :
+                 (dpra.metric===null? "": dpra.metric.toFixed(2)+"%"),
+      DPRA_call: dpra.label, DPRA_conf: dpra.conf,
+      KS_in: (mode==='calls') ? (entry.row[Number(document.getElementById("colKS").value)]) :
+               (ks.metric && ks.metric.fold!==null ? ks.metric.fold.toFixed(2)+"x" : ""),
+      KS_viab: (mode==='calls') ? "" : (ks.metric && ks.metric.viab!==null ? ks.metric.viab.toFixed(1)+"%" : ""),
+      KS_call: ks.label, KS_conf: ks.conf,
+      HCLAT_in: (mode==='calls') ? (entry.row[Number(document.getElementById("colHCLAT").value)]) :
+                  [ (h.metric.rfi86!=null? "CD86="+h.metric.rfi86.toFixed(0):""),
+                    (h.metric.rfi54!=null? "CD54="+h.metric.rfi54.toFixed(0):""),
+                    (h.metric.viab!=null? "Viab="+h.metric.viab.toFixed(0)+"%":"") ].filter(Boolean).join(" / "),
+      HCLAT_call: h.label, HCLAT_conf: h.conf,
+      Final: final, FinalCss: css, Rationale: rationale
+    };
+    return res;
+  });
+
+  renderResults(out, getMode()==='raw');
+}
+
+function renderResults(rows, rawMode) {
+  const table = document.getElementById("resultsTable");
+  const headers = rawMode
+    ? ["CAS","Name","DPRA % (calc)","DPRA call","DPRA conf",
+       "KS fold","KS viab %","KS call","KS conf",
+       "hCLAT (CD86/CD54/Viab)","hCLAT call","hCLAT conf",
+       "2o3 Final","Rationale"]
+    : ["CAS","Name","DPRA (in)","DPRA call","DPRA conf",
+       "KS (in)","KS call","KS conf",
+       "hCLAT (in)","hCLAT call","hCLAT conf",
+       "2o3 Final","Rationale"];
+  const thead = `<thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead>`;
+  const tbody = `<tbody>${
+    rows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.CAS)}</td>
+        <td>${escapeHtml(r.Name)}</td>
+        <td>${escapeHtml(r.DPRA_in||"")}</td>
+        <td>${escapeHtml(r.DPRA_call)}</td>
+        <td><span class="${r.DPRA_conf==='High'?'confH':'confL'}">${r.DPRA_conf}</span></td>
+        <td>${escapeHtml(r.KS_in||"")}</td>
+        <td>${rawMode? escapeHtml(r.KS_viab||"") : escapeHtml(r.KS_call)}</td>
+        <td>${rawMode? `<span class="${r.KS_conf==='High'?'confH':'confL'}">${r.KS_conf}</span>` : `<span class="${r.KS_conf==='High'?'confH':'confL'}">${r.KS_conf}</span>`}</td>
+        <td>${escapeHtml(r.HCLAT_in||"")}</td>
+        <td>${escapeHtml(r.HCLAT_call)}</td>
+        <td><span class="${r.HCLAT_conf==='High'?'confH':'confL'}">${r.HCLAT_conf}</span></td>
+        <td><span class="pill ${r.FinalCss}">${r.Final}</span></td>
+        <td>${escapeHtml(r.Rationale)}</td>
+      </tr>
+    `).join("")
+  }</tbody>`;
+  table.innerHTML = thead + tbody;
+  document.getElementById("resultsPanel").style.display = "block";
+  window.__rowsForDownload = rows;
+  window.__rawMode = rawMode;
+}
+
+function escapeHtml(v) {
+  if (v === undefined || v === null) return "";
+  return String(v).replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]));
+}
+
+function downloadCSV() {
+  const rows = window.__rowsForDownload || [];
+  const rawMode = window.__rawMode;
+  const headers = rawMode
+    ? ["CAS","Name","DPRA_calc","DPRA_call","DPRA_conf","KS_fold","KS_viab","KS_call","KS_conf","hCLAT_metrics","hCLAT_call","hCLAT_conf","Final","Rationale"]
+    : ["CAS","Name","DPRA_in","DPRA_call","DPRA_conf","KS_in","KS_call","KS_conf","HCLAT_in","HCLAT_call","HCLAT_conf","Final","Rationale"];
+  const csvLines = [headers.join(",")];
+  for (const r of rows) {
+    const vals = rawMode
+      ? [r.CAS,r.Name,r.DPRA_in,r.DPRA_call,r.DPRA_conf,r.KS_in,r.KS_viab,r.KS_call,r.KS_conf,r.HCLAT_in,r.HCLAT_call,r.HCLAT_conf,r.Final,r.Rationale]
+      : [r.CAS,r.Name,r.DPRA_in,r.DPRA_call,r.DPRA_conf,r.KS_in,r.KS_call,r.KS_conf,r.HCLAT_in,r.HCLAT_call,r.HCLAT_conf,r.Final,r.Rationale];
+    const esc = vals.map(x => x===undefined || x===null ? "" : String(x).includes(",") || String(x).includes('"') ? `"{String(x).replace(/"/g,'""')}"` : String(x));
+    csvLines.push(esc.join(","));
+  }
+  const blob = new Blob([csvLines.join("\n")], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = fileNameBase + "_2o3_results.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
