@@ -30,7 +30,4 @@ Borderlines: you can set optional bands (e.g., DPRA 3.0–6.38%, KS fold 1.50–
 - If your lab uses different thresholds/borderline windows, adjust the fields in **Advanced**.
 
 ---
-This has been a Maura Lavelle production
-(\_/)   (\_/)   (\_/)   (\_/)
-('.'.)  ('.'.)  ('.'.)  ('.'.)
-(")(")  (")(")  (")(")  (")(")
+This has been a Maura Lavelle production <(0.0)>
